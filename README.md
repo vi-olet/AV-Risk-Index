@@ -427,3 +427,7 @@ av_risk_index/
 
 ---
 
+
+## Summary Charts
+<img width="2085" height="1475" alt="summary_charts" src="https://github.com/user-attachments/assets/11fac44c-fb48-4baf-8bff-503bb5548ac8" />
+
