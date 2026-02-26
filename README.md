@@ -103,6 +103,129 @@ Three data sources flow through eight processing stages into one interactive map
 
 ---
 
+## Data Sources
+
+Three datasets. All free. All public. Each one answers a different question about the same street.
+
+---
+
+### 1 — Google Street View Static API
+
+**What it provides:** 640×480 photographs taken from a car-mounted camera at street level. Used to visually assess pavement condition on every road segment.
+
+**Where to get it:**
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) and sign in with a Google account
+2. Click **Select a project** at the top → **New Project** → name it `av-risk-index` → Create
+3. In the left menu go to **APIs & Services → Library**
+4. Search for **Street View Static API** → click it → click **Enable**
+5. Go to **APIs & Services → Credentials**
+6. Click **+ Create Credentials → API Key**
+7. Copy the key that appears
+
+**How to configure it:**
+
+Open `.env` in your project root and paste your key:
+```
+STREETVIEW_API_KEY=your_actual_key_here
+```
+No spaces. No quotes. Save the file.
+
+**Cost:** Google provides $200 free monthly credit. Each Street View image costs $0.007. Menlo Park requires approximately 5,690 images — total cost around $40, covered by the free tier with credit to spare. Set a budget alert in the Google Cloud console to avoid surprise charges.
+
+**What gets downloaded:** One JPEG per sample point, cached locally in `data/streetview_images/`. If the pipeline is interrupted and restarted, already-downloaded images are skipped automatically.
+
+---
+
+### 2 — OpenStreetMap via OSMnx
+
+**What it provides:** The complete drivable road network for Menlo Park — every segment with attributes including highway classification, lane count, speed limit, and directionality. No download required. The pipeline fetches it automatically.
+
+**Where to get it:** Script `01_download_road_network.py` handles this entirely. Run it once:
+
+```bash
+python scripts/01_download_road_network.py
+```
+
+This queries the OpenStreetMap API via the OSMnx Python library and saves the road network to `data/raw/road_network/menlo_park_streets.gpkg`. Requires an internet connection. Takes about 30 seconds.
+
+**What gets saved:** 2,480 road segments as a GeoPackage with full OSM attribute columns. This file is the spatial backbone that every downstream script joins against.
+
+**Note:** OSMnx is maintained by Geoff Boeing at USC. The library handles coordinate system conversion, graph simplification, and edge attribute extraction automatically. Documentation at [osmnx.readthedocs.io](https://osmnx.readthedocs.io).
+
+---
+
+### 3 — SWITRS Crash Records
+
+**What it provides:** Every recorded collision in San Mateo County from 2018 to 2023 — three linked tables covering crash details, party information, and victim injuries. Used to score historical accident risk per road segment.
+
+**Where to get it:**
+
+1. Go to [tims.berkeley.edu](https://tims.berkeley.edu)
+2. Click **SWITRS Query** in the top navigation
+3. Create a free account and verify your email
+4. Log in and click **New Query**
+5. Set the following filters:
+   - **County:** San Mateo
+   - **Date range:** January 1 2018 to December 31 2023
+   - **Collision type:** All (leave unchecked to include everything)
+6. Click **Submit Query** and wait — large queries take 2–5 minutes to process
+7. When complete, click **Download** and select **CSV format**
+8. You will receive three separate CSV files: `Crashes`, `Parties`, `Victims`
+
+**Where to place the files:**
+
+Rename and move them to match these exact paths:
+```
+data/raw/supplemental/crashes.csv
+data/raw/supplemental/parties.csv
+data/raw/supplemental/victims.csv
+```
+
+**How to process them:**
+
+Run the preprocessing script:
+```bash
+python scripts/00_preprocess_accidents.py
+```
+
+This merges the three tables, filters to valid coordinates within San Mateo County bounds, calculates a severity weight per crash, and saves the cleaned output to `data/raw/supplemental/accidents.csv`. That file is what all downstream scripts consume.
+
+**Expected output:**
+```
+Crashes: ~971 rows
+After coordinate filter: 957 crashes
+Fatal crashes: 10
+Cyclist involved: 141
+Pedestrian involved: 61
+```
+
+**Why SWITRS:** It is the most comprehensive publicly available crash dataset for California. Maintained by CHP and distributed by UC Berkeley's SafeTREC. Unlike aggregated datasets, SWITRS provides GPS coordinates per crash, enabling direct spatial joins to the road network.
+
+---
+
+### Run Order After Data Collection
+
+Once all three sources are in place, run the full pipeline in this order:
+
+```bash
+python scripts/01_download_road_network.py   # OSM road network (automatic)
+python scripts/02a_prepare_sample_points.py  # Generate Street View sample coordinates
+python scripts/02b_streetview_distress.py    # Fetch images + score distress (takes 30–60 min)
+python scripts/02c_aggregate_distress.py     # Average scores to segment level
+python scripts/03_osm_complexity.py          # Score behavioral complexity from OSM attributes
+python scripts/00_preprocess_accidents.py    # Clean and weight SWITRS crash data
+python scripts/04_spatial_join.py            # Attach all three layers to road network
+python scripts/05_risk_scoring.py            # Normalize, weight, and score each segment
+python scripts/06_hotspot_analysis.py        # Getis-Ord Gi* spatial statistics
+python scripts/07_build_webmap.py            # Build interactive HTML map
+python scripts/08_summary_stats.py           # Charts and summary report
+```
+
+Scripts 02b is the only one that takes significant time — it makes one API call per sample point. All other scripts complete in under 2 minutes each.
+
+---
+
 ## Why Each Stage Was Built This Way
 
 ### Raw Data — Three Independent Signals
@@ -276,3 +399,31 @@ A single bad street could be noise. A cluster of bad streets is a systemic probl
 | SWITRS | Historical crash records |
 
 ---
+
+## Project Structure
+
+```
+av_risk_index/
+├── scripts/
+│   ├── config.py
+│   ├── 00_preprocess_accidents.py
+│   ├── 01_download_road_network.py
+│   ├── 02a_prepare_sample_points.py
+│   ├── 02b_streetview_distress.py
+│   ├── 02c_aggregate_distress.py
+│   ├── 03_osm_complexity.py
+│   ├── 04_spatial_join.py
+│   ├── 05_risk_scoring.py
+│   ├── 06_hotspot_analysis.py
+│   ├── 07_build_webmap.py
+│   └── 08_summary_stats.py
+├── outputs/
+│   ├── maps/
+│   │   └── av_risk_index_map.html   ← final deliverable
+│   └── charts/
+│       └── summary_charts.png
+└── run_pipeline.py
+```
+
+---
+
