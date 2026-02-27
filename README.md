@@ -21,16 +21,7 @@ Three independent data sources. One composite score per segment. A statistically
 ---
 
 
-
-
-
-
-
-
-
-
-
-
+Left Text &emsp;&emsp;&emsp;&emsp;&emsp; Right Text
 
 
 ## Pipeline
