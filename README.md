@@ -1,4 +1,4 @@
-# AV Road Risk Index
+# AV Risk Index
 **Menlo Park, CA** &nbsp;|&nbsp; Street View CV &nbsp;×&nbsp; OSM Complexity &nbsp;×&nbsp; SWITRS Crashes &nbsp;×&nbsp; Getis-Ord Gi*
 
 ---
