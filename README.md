@@ -19,10 +19,11 @@ Three independent data sources. One composite score per segment. A statistically
 > **To view the full interactive map:** download `outputs/maps/av_risk_index_map.html` and open in Chrome or Edge. Click any segment to see the Street View photo, risk score breakdown, and hotspot classification.
 
 ---
-
-
-Left Text &emsp;&emsp;&emsp;&emsp;&emsp; Right Text
-
+<br>
+<br>
+<br>
+<br>
+<br>
 
 ## Pipeline
 
