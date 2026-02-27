@@ -20,6 +20,19 @@ Three independent data sources. One composite score per segment. A statistically
 
 ---
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## Pipeline
 
 Three data sources flow through eight processing stages into one interactive map.
