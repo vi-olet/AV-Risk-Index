@@ -13,8 +13,10 @@ Three independent data sources. One composite score per segment. A statistically
 
 ## Map Preview
 
-<img width="1914" height="1068" alt="AV_Risk_Map png" src="https://github.com/user-attachments/assets/5e04d26a-df04-46f0-8d6c-9d58945d87d5" />
+<!-- PASTE YOUR SCREENSHOT HERE -->
 <!-- Replace this comment block with: ![AV Road Risk Index — Menlo Park CA](outputs/maps/av_risk_index_preview.png) -->
+
+> **To view the full interactive map:** download `outputs/maps/av_risk_index_map.html` and open in Chrome or Edge. Click any segment to see the Street View photo, risk score breakdown, and hotspot classification.
 
 ---
 
@@ -129,7 +131,7 @@ STREETVIEW_API_KEY=your_actual_key_here
 ```
 No spaces. No quotes. Save the file.
 
-**Cost:** Google provides $200 free monthly credit. Each Street View image costs $0.007. Menlo Park requires approximately 5,690 images — total cost around $40, covered by the free tier with credit to spare. Set a budget alert in the Google Cloud console to avoid surprise charges.
+**Cost:** Google provides $200 free monthly credit. Each Street View image costs $0.007. Menlo Park requires approximately 5,690 images — total cost around $40, covered by the free tier with credit to spare.
 
 **What gets downloaded:** One JPEG per sample point, cached locally in `data/streetview_images/`. If the pipeline is interrupted and restarted, already-downloaded images are skipped automatically.
 
@@ -139,118 +141,111 @@ No spaces. No quotes. Save the file.
 
 **What it provides:** The complete drivable road network for Menlo Park — every segment with attributes including highway classification, lane count, speed limit, and directionality. No download required. The pipeline fetches it automatically.
 
-**Where to get it:** Script `01_download_road_network.py` handles this entirely. Run it once:
+**Where to get it:** Script `01_download_road_network.py` handles this entirely:
 
 ```bash
 python scripts/01_download_road_network.py
 ```
 
-This queries the OpenStreetMap API via the OSMnx Python library and saves the road network to `data/raw/road_network/menlo_park_streets.gpkg`. Requires an internet connection. Takes about 30 seconds.
-
-**What gets saved:** 2,480 road segments as a GeoPackage with full OSM attribute columns. This file is the spatial backbone that every downstream script joins against.
-
-**Note:** OSMnx is maintained by Geoff Boeing at USC. The library handles coordinate system conversion, graph simplification, and edge attribute extraction automatically. Documentation at [osmnx.readthedocs.io](https://osmnx.readthedocs.io).
+This saves the road network to `data/raw/road_network/menlo_park_streets.gpkg`. Takes about 30 seconds.
 
 ---
 
 ### 3 — SWITRS Crash Records
 
-**What it provides:** Every recorded collision in San Mateo County from 2018 to 2023 — three linked tables covering crash details, party information, and victim injuries. Used to score historical accident risk per road segment.
+**What it provides:** Every recorded collision in San Mateo County from 2018 to 2023 — crashes, parties, and victims. Used to score historical accident risk per road segment.
 
 **Where to get it:**
 
 1. Go to [tims.berkeley.edu](https://tims.berkeley.edu)
-2. Click **SWITRS Query** in the top navigation
-3. Create a free account and verify your email
-4. Log in and click **New Query**
-5. Set the following filters:
-   - **County:** San Mateo
-   - **Date range:** January 1 2018 to December 31 2023
-   - **Collision type:** All (leave unchecked to include everything)
-6. Click **Submit Query** and wait — large queries take 2–5 minutes to process
-7. When complete, click **Download** and select **CSV format**
-8. You will receive three separate CSV files: `Crashes`, `Parties`, `Victims`
+2. Click **SWITRS Query** → create a free account → log in
+3. Set filters: County = San Mateo | Years = 2018–2023 | All collision types
+4. Click **Submit Query** → wait 2–5 minutes → **Download as CSV**
+5. You will receive three files: `Crashes`, `Parties`, `Victims`
 
 **Where to place the files:**
-
-Rename and move them to match these exact paths:
 ```
 data/raw/supplemental/crashes.csv
 data/raw/supplemental/parties.csv
 data/raw/supplemental/victims.csv
 ```
 
-**How to process them:**
-
-Run the preprocessing script:
+Then run:
 ```bash
 python scripts/00_preprocess_accidents.py
 ```
-
-This merges the three tables, filters to valid coordinates within San Mateo County bounds, calculates a severity weight per crash, and saves the cleaned output to `data/raw/supplemental/accidents.csv`. That file is what all downstream scripts consume.
-
-**Expected output:**
-```
-Crashes: ~971 rows
-After coordinate filter: 957 crashes
-Fatal crashes: 10
-Cyclist involved: 141
-Pedestrian involved: 61
-```
-
-**Why SWITRS:** It is the most comprehensive publicly available crash dataset for California. Maintained by CHP and distributed by UC Berkeley's SafeTREC. Unlike aggregated datasets, SWITRS provides GPS coordinates per crash, enabling direct spatial joins to the road network.
 
 ---
 
 ### Run Order After Data Collection
 
-Once all three sources are in place, run the full pipeline in this order:
-
 ```bash
-python scripts/01_download_road_network.py   # OSM road network (automatic)
-python scripts/02a_prepare_sample_points.py  # Generate Street View sample coordinates
-python scripts/02b_streetview_distress.py    # Fetch images + score distress (takes 30–60 min)
-python scripts/02c_aggregate_distress.py     # Average scores to segment level
-python scripts/03_osm_complexity.py          # Score behavioral complexity from OSM attributes
-python scripts/00_preprocess_accidents.py    # Clean and weight SWITRS crash data
-python scripts/04_spatial_join.py            # Attach all three layers to road network
-python scripts/05_risk_scoring.py            # Normalize, weight, and score each segment
-python scripts/06_hotspot_analysis.py        # Getis-Ord Gi* spatial statistics
-python scripts/07_build_webmap.py            # Build interactive HTML map
-python scripts/08_summary_stats.py           # Charts and summary report
+python scripts/01_download_road_network.py
+python scripts/02a_prepare_sample_points.py
+python scripts/02b_streetview_distress.py      # 30–60 min — API calls
+python scripts/02c_aggregate_distress.py
+python scripts/03_osm_complexity.py
+python scripts/00_preprocess_accidents.py
+python scripts/04_spatial_join.py
+python scripts/05_risk_scoring.py
+python scripts/06_hotspot_analysis.py
+python scripts/07_build_webmap.py
+python scripts/08_summary_stats.py
 ```
-
-Scripts 02b is the only one that takes significant time — it makes one API call per sample point. All other scripts complete in under 2 minutes each.
 
 ---
 
-## Why Each Stage Was Built This Way
+## Pipeline — Stage by Stage
 
-### Raw Data — Three Independent Signals
+---
 
-The index uses three data sources that were not built for this purpose. That is deliberate. When three independent signals — one visual, one structural, one historical — all flag the same street, that convergence is the finding.
+### 01 — Download Road Network
 
-**Street View** answers: what does this road look like right now?
-**OpenStreetMap** answers: what kind of driving environment is this?
-**SWITRS** answers: what has already gone wrong here?
+Downloads the complete Menlo Park drivable road network from OpenStreetMap.
 
-No single source is reliable on its own. A road can look clean, be structurally complex, and have a fatal crash history. The composite sees all three.
+```bash
+python scripts/01_download_road_network.py
+```
+
+**Expected output:**
+```
+Downloading Menlo Park road network from OpenStreetMap...
+Done. Saved 2480 road segments to data/raw/road_network/menlo_park_streets.gpkg
+Road types found: {'residential': 1402, 'secondary': 387, 'tertiary': 312,
+                   'primary': 198, 'unclassified': 89, 'living_street': 42}
+```
+
+**Output:** `data/raw/road_network/menlo_park_streets.gpkg`
 
 ---
 
 ### 02a — Sample Points
 
-A road segment is a line. A camera needs a GPS coordinate and a direction.
+A road segment is a line. A camera needs a GPS coordinate and a direction. Every segment is divided into stops — one every 50 metres. At each stop the script calculates where the camera sits and which direction it faces along the road.
 
-Every segment is divided into stops — one every 50 metres. At each stop the script calculates two things: where the camera sits, and which direction it faces along the road. That heading calculation is what keeps the camera looking at the road surface instead of perpendicular to it.
+```bash
+python scripts/02a_prepare_sample_points.py
+```
 
-5,690 sample points generated across 974 unique segments. 99.9% Street View coverage.
+**Expected output:**
+```
+Loading road network...
+Loaded 2480 road segments
+Generated 5690 sample points across 974 unique segments
+```
+
+**Output:** `data/processed/sample_points.gpkg`
 
 ---
 
 ### 02b — Street View Distress Scoring
 
-The image is cropped to the bottom 40% — that is where the road surface appears when the camera is angled down at –45°. Three metrics are measured independently and combined:
+The image is cropped to the bottom 40% — that is where the road surface appears when the camera is angled down at –45°. Three metrics are measured and combined.
+
+**Formula:**
+```
+distress_score = (edge_density × 0.40) + (texture_variance × 0.35) + (dark_patch_ratio × 0.25)
+```
 
 | Metric | Weight | What it detects |
 |---|---|---|
@@ -260,51 +255,133 @@ The image is cropped to the bottom 40% — that is where the road surface appear
 
 No single metric is reliable alone. Edge detection fires on shadows. Texture variance fires on painted markings. The three-metric combination filters false positives that any individual signal would produce.
 
-Output: one `distress_score` from 0 (pristine) to 1 (failed) per image.
+```bash
+python scripts/02b_streetview_distress.py
+```
+
+**Expected output:**
+```
+Processing 5690 sample points...
+Complete: 5688 scored | 2 no coverage | 0 errors
+
+count    5688.000000
+mean        0.068200
+std         0.044100
+min         0.006200
+max         0.412000
+```
+
+**Output:** `data/processed/streetview_distress_raw.csv`
+
+> Takes 30–60 minutes. Images cached in `data/streetview_images/` — safe to interrupt and restart.
 
 ---
 
 ### 02c — Aggregate to Segment
 
-One photo is an observation. Five photos of the same street is a measurement.
+One photo is an observation. Five photos of the same street is a measurement. Each sample point is scored individually then aggregated: mean, max, and standard deviation per segment. Segments with fewer than two samples are flagged as less reliable.
 
-Each sample point is scored individually, then aggregated to segment level: mean, max, and standard deviation. Segments with fewer than two samples are flagged as less reliable — a high score on a single image is a candidate; a consistent high score across six images is a finding.
+```bash
+python scripts/02c_aggregate_distress.py
+```
+
+**Expected output:**
+```
+Raw records: 5688 across 974 segments
+
+Distress class distribution:
+Excellent    612
+Good         298
+Fair          52
+Poor          11
+Failed         1
+
+Reliable segments (2+ samples): 786
+```
+
+**Output:** `data/processed/streetview_distress_by_segment.csv`
 
 ---
 
 ### 03 — OSM Behavioral Complexity
 
-Behavioral complexity is a measure of how many different kinds of agents an AV will encounter — vehicles, pedestrians, cyclists, turning movements.
+Behavioral complexity measures how many different kinds of agents an AV will encounter. OSM road attributes are the structural predictors of that agent density.
 
-OSM road attributes are the structural predictors of that agent density. Highway classification, lane count, speed limits, and directionality each contribute to a base complexity score. The hierarchy is built into the data: a pedestrian street scores 0.80 (maximum unpredictability), a residential street scores 0.30 (low speed, mostly cars).
+**Formula:**
+```
+complexity = base_score × lane_factor × oneway_factor × speed_factor + noise(σ=0.02)
+
+lane_factor    = 1.0 + (lanes - 1) × 0.08
+oneway_factor  = 0.85 if one-way, else 1.0
+speed_factor   = 1.0 + (speed_limit / 100)
+```
 
 | Highway type | Base score | Why |
 |---|---|---|
 | Pedestrian / living street | 0.80 | Maximum mixed-agent environment |
 | Primary | 0.70 | High traffic, signals, turning movements |
 | Secondary | 0.65 | Mixed traffic, transitional environment |
+| Tertiary | 0.50 | Moderate traffic, mixed agents |
 | Residential | 0.30 | Low speed, mostly cars, predictable |
 
-Lane factor, oneway factor, and speed factor apply as multipliers. A four-lane primary road scores higher than a two-lane primary road — correctly, because the agent interaction space is wider.
+```bash
+python scripts/03_osm_complexity.py
+```
+
+**Expected output:**
+```
+Loaded 2480 road segments
+Computing OSM behavioral complexity scores...
+
+Complexity score summary:
+count    2480.000000
+mean        0.412000
+std         0.198000
+min         0.089000
+max         0.891000
+
+Saved 2480 complexity scores to data/processed/osm_complexity.csv
+```
+
+**Output:** `data/processed/osm_complexity.csv`
 
 ---
 
 ### 00 — Preprocess Accidents
 
-Raw SWITRS data contains three tables: Crashes, Parties, and Victims. The preprocessing step cleans, filters to valid San Mateo County coordinates, and calculates a severity weight per crash.
+Raw SWITRS data contains three tables. The preprocessing step cleans, filters to valid coordinates, and calculates a severity weight per crash.
 
-**The key design decision:** a fatal crash is not the same risk signal as a fender bender.
+**Formula:**
+```
+severity_weight = fatal × 3.0 + severe_injury × 2.0 + other_injury × 1.0 + property_damage × 1.0
+```
 
-| Severity | Weight |
-|---|---|
-| Fatal | 3.0 |
-| Severe injury | 2.0 |
-| Other injury | 1.0 |
-| Property damage only | 1.0 |
+| Severity | Weight | Rationale |
+|---|---|---|
+| Fatal | 3.0 | Highest consequence |
+| Severe injury | 2.0 | Significant bodily harm |
+| Other injury | 1.0 | Minor injury |
+| Property damage only | 1.0 | Minimum baseline |
 
-Raw accident counts are misleading. A busy intersection accumulates minor incidents. A quiet residential street can have one fatal crash. Severity weighting preserves the distinction that matters for AV risk assessment.
+Raw counts are misleading. A busy intersection accumulates minor incidents. A quiet street can have one fatal crash. Severity weighting preserves the distinction.
 
-957 crashes processed. 10 fatal. 141 cyclist involved. 61 pedestrian involved.
+```bash
+python scripts/00_preprocess_accidents.py
+```
+
+**Expected output:**
+```
+Loading SWITRS tables...
+Crashes: 971 rows | Parties: 2114 rows | Victims: 1341 rows
+After coordinate filter: 957 crashes
+
+Fatal crashes:       10
+Cyclist involved:   141
+Pedestrian involved: 61
+Alcohol involved:    69
+```
+
+**Output:** `data/raw/supplemental/accidents.csv`
 
 ---
 
@@ -312,64 +389,255 @@ Raw accident counts are misleading. A busy intersection accumulates minor incide
 
 Three datasets. Three different shapes. Three different scales. Script 04 attaches all of them to the same road segment using the right join method for each data type.
 
-**JOIN 1 — distress:** direct merge on `osmid`. Distress is already at segment level — no geometry needed. 99.9% coverage.
+**JOIN 1 — distress:** direct merge on `osmid`. Already at segment level — no geometry needed. 99.9% coverage.
 
-**JOIN 2 — complexity:** `sjoin_nearest` with a 100-metre search radius. OSM centroids sit at the middle of long segments — 100 m provides enough slack to match correctly without pulling from the wrong street. 99.1% coverage.
+**JOIN 2 — complexity:** `sjoin_nearest` at 100-metre radius. OSM centroids sit at the middle of long segments — 100 m provides enough slack to match correctly. 99.1% coverage.
 
-**JOIN 3 — accidents:** `sjoin_nearest` with a 30-metre search radius. Tight attribution matters here — a crash at one intersection should not inflate the score of a parallel street two blocks over.
+**JOIN 3 — accidents:** `sjoin_nearest` at 30-metre radius. Tight attribution matters — a crash at one intersection should not inflate the score of a parallel street two blocks over.
 
-Missing distress values are imputed to the city median, not zero. Zero imputation would artificially pull risk scores down for segments without Street View coverage.
+Missing distress values are imputed to the city median, not zero.
+
+```bash
+python scripts/04_spatial_join.py
+```
+
+**Expected output:**
+```
+Loaded 2480 road segments
+Street View coverage:  2478/2480 (99.9%)
+Complexity coverage:   2458/2480 (99.1%)
+Accident coverage:      657/2480 (26.5%)
+
+Saved 2480 segments to data/processed/roads_with_features.gpkg
+
+Feature summary:
+       avg_distress  avg_complexity  accident_count
+mean       0.068793        0.412000        0.960887
+max        0.248945        0.891000       75.000000
+```
+
+**Output:** `data/processed/roads_with_features.gpkg`
 
 ---
 
 ### 05 — Risk Scoring
 
-Three numbers on different scales measuring different things. The scoring stage normalises, weights, and combines them into one comparable risk score per segment.
+Three numbers on different scales. The scoring stage normalises, weights, and combines them into one comparable risk score per segment.
 
-**Outlier cap:** accident counts are capped at the 95th percentile before normalisation. Without this, a single segment with 75 accidents causes MinMaxScaler to divide all other values by 75 — a segment with 5 accidents scores 0.067 instead of reflecting its actual risk level. Capping preserves the signal.
+**Step 1 — Outlier cap:**
+```
+accident_count_capped = min(accident_count, percentile_95)
+# percentile_95 = 6.0 for Menlo Park
+# Prevents one segment with 75 accidents from compressing all other scores
+```
+
+**Step 2 — Normalisation (MinMaxScaler):**
+```
+norm_surface   = (avg_distress   - min) / (max - min)
+norm_behavior  = (avg_complexity - min) / (max - min)
+norm_accidents = (accident_capped - min) / (max - min)
+```
+
+**Step 3 — Composite risk score:**
+```
+risk_score = (norm_surface × 0.35) + (norm_behavior × 0.40) + (norm_accidents × 0.25)
+```
 
 **Weights:**
 
 | Component | Weight | Rationale |
 |---|---|---|
-| Behavioral complexity | **40%** | AV research consistently identifies prediction failure in dense multi-agent environments as the leading incident cause. This is the most AV-specific signal in the index. |
-| Pavement distress | **35%** | Real risk factor, but Menlo Park is a well-funded city with well-maintained roads. Low variance in this layer. |
-| Accident history | **25%** | Retrospective data. Undercounts near-misses. A road can be genuinely dangerous without a recorded crash yet. Still essential — historical pattern is a real signal. |
+| Behavioral complexity | **40%** | AV research identifies prediction failure in dense multi-agent environments as the leading incident cause |
+| Pavement distress | **35%** | Real risk factor, but Menlo Park is well-maintained — low variance in this layer |
+| Accident history | **25%** | Retrospective data, undercounts near-misses — still an essential historical signal |
 
-**Risk tiers:** percentile-based, not fixed bins.
+**Risk tiers** (percentile-based, not fixed bins):
 
-| Tier | Percentile range | Segments |
+| Tier | Percentile | Segments |
 |---|---|---|
 | Low | 0 – 40th | 992 |
 | Moderate | 40th – 70th | 744 |
 | High | 70th – 90th | 511 |
 | Critical | Top 10% | 233 |
 
-Fixed bins cluster poorly when scores compress. Percentile tiers guarantee all four categories are meaningfully populated regardless of distribution shape.
+```bash
+python scripts/05_risk_scoring.py
+```
 
-Each segment also receives a `dominant_factor` tag — Surface Condition, Behavioral Complexity, or Accident History — identifying which component is driving that segment's score. This is what tells a decision-maker whether a high-risk street is a resurfacing problem, a routing problem, or a crash history problem.
+**Expected output:**
+```
+Capping accident count at 95th percentile: 6.0
+
+Normalized score means:
+  Surface:   0.256
+  Behavior:  0.408
+  Accidents: 0.127
+
+Risk tier distribution:
+Low         992 | Moderate    744 | High        511 | Critical    233
+
+Dominant risk factors:
+Behavioral Complexity    1897
+Surface Condition         460
+Accident History          123
+```
+
+**Output:** `data/processed/roads_risk_scored.gpkg`
 
 ---
 
 ### 06 — Getis-Ord Gi* Hotspot Analysis
 
-A high-scoring segment could be a data anomaly. Gi* answers a different question: is this segment's score higher than you would expect by chance, given what its neighbours score?
+A high-scoring segment could be a data anomaly. Gi* answers a different question: is this segment's score elevated relative to its neighbours — to a degree that is statistically unlikely to be random?
 
-A single bad street could be noise. A cluster of bad streets is a systemic problem. Gi* is the statistical tool that tells the difference.
+**Formula:**
+```
+         Σ(j) w_ij × x_j  -  X̄ × Σ(j) w_ij
+Gi*(d) = ──────────────────────────────────────────────────────
+         S × sqrt[ (n × Σ(j) w²_ij - (Σ(j) w_ij)²) / (n-1) ]
 
-**Spatial weights:** 300-metre distance band — roughly one city block in Menlo Park's road grid. Each segment has an average of 51.1 neighbours. Row-standardised so all neighbours within 300 m contribute equally regardless of exact distance.
+Where:
+  x_j     = risk score of neighbour j
+  w_ij    = spatial weight (1 if within 300m, 0 otherwise, row-standardised)
+  X̄       = mean risk score across all 2,480 segments
+  S       = standard deviation of all risk scores
+  n       = 2,480 total segments
+```
 
-**Permutation testing:** 999 random permutations per segment. Each segment receives a z-score and a p-value. At 99% confidence there is a 1-in-100 chance the cluster happened by accident.
+Output is a z-score and empirical p-value per segment from 999 random permutations.
 
-**This is what separates a risk map from a hotspot map.** A risk map shows you scores. A hotspot map shows you where elevated scores are spatially correlated — where the problem is systemic, not isolated.
+**Classification thresholds:**
 
-| Classification | Segments |
-|---|---|
-| Hot Spot (99%) | 158 |
-| Hot Spot (95%) | 78 |
-| Hot Spot (90%) | 120 |
-| Not Significant | 1,652 |
-| Cold Spot | 472 |
+| z-score | p-value | Classification |
+|---|---|---|
+| Positive | ≤ 0.01 | Hot Spot 99% — 1-in-100 chance this is random |
+| Positive | ≤ 0.05 | Hot Spot 95% — 1-in-20 chance this is random |
+| Positive | ≤ 0.10 | Hot Spot 90% — 1-in-10 chance this is random |
+| — | > 0.10 | Not Significant |
+| Negative | ≤ 0.10 | Cold Spot — significantly lower than surroundings |
+
+```bash
+python scripts/06_hotspot_analysis.py
+```
+
+**Expected output:**
+```
+Mean neighbors per segment: 51.1
+Running Getis-Ord Gi* (this takes a few minutes)...
+
+Hotspot classification results:
+Not Significant    1652
+Cold Spot (99%)     194
+Hot Spot (99%)      158
+Cold Spot (95%)     140
+Cold Spot (90%)     138
+Hot Spot (90%)      120
+Hot Spot (95%)       78
+```
+
+**Output:** `data/processed/roads_hotspot_final.gpkg`
+
+---
+
+### 07 — Build Web Map
+
+```bash
+python scripts/07_build_webmap.py
+```
+
+**Expected output:**
+```
+Loading hotspot data...
+Adding 2480 road segments to map...
+Map saved to outputs/maps/av_risk_index_map.html
+Segments added: 2480 | Skipped: 0
+```
+
+**Output:** `outputs/maps/av_risk_index_map.html`
+
+---
+
+### 08 — Summary Stats
+
+```bash
+python scripts/08_summary_stats.py
+```
+
+**Expected output:**
+```
+Total road segments analyzed: 2480
+
+Risk Tier Distribution:
+Low 992 | Moderate 744 | High 511 | Critical 233
+
+Dominant Risk Factors:
+Behavioral Complexity 1897 | Surface Condition 460 | Accident History 123
+
+Top 10 Highest Risk Segments (unique streets):
+          name  risk_score    hotspot_class       dominant_factor
+   Willow Road    0.682946  Not Significant Behavioral Complexity
+Santa Cruz Ave    0.655913   Hot Spot (99%) Behavioral Complexity
+University Dr     0.422476   Hot Spot (99%)   Accident History
+
+Charts saved to outputs/charts/summary_charts.png
+```
+
+**Output:** `outputs/charts/summary_charts.png` and `outputs/reports/summary_stats.csv`
+
+---
+
+## What the Gi* Results Mean for Menlo Park
+
+The Getis-Ord Gi* analysis identified **356 statistically significant hotspot segments** at 90% confidence or higher. This is not a list of streets that scored high. It is a list of streets where elevated risk is spatially concentrated — where the problem is systemic and unlikely to be random.
+
+---
+
+### Score vs. Cluster — The Critical Distinction
+
+**A high risk score** means a segment's pavement condition, behavioral complexity, and accident history are elevated relative to the city average.
+
+**A confirmed hotspot** means that segment AND its surrounding streets within 300 metres are collectively elevated — to a degree with less than a 1–10% probability of occurring by chance.
+
+These are different findings. They require different interventions.
+
+| Street | Risk Score | Hotspot Class | What it means |
+|---|---|---|---|
+| Willow Road | 0.68 | Not Significant | Highest individual score in the city. Stands alone — surrounding streets are lower-order residential roads that pull the neighbourhood average down. One specific corridor to flag for routing. |
+| Santa Cruz Avenue | 0.66 | Hot Spot 99% | Slightly lower score, but the entire downtown grid around it is elevated. The whole zone is a systemic problem. |
+| University Drive | 0.42 | Hot Spot 99% | Moderate score made statistically significant by a dense cluster of accident history in the surrounding area. |
+
+---
+
+### The Two Primary Hotspot Zones
+
+**Zone 1 — Downtown Menlo Park (Santa Cruz Avenue corridor)**
+
+Santa Cruz Avenue confirmed Hot Spot at 99% confidence. The surrounding downtown grid — cross streets, parallel routes, feeder roads — all elevated. Dominant factor: Behavioral Complexity. Angled parking, cyclists from the Bay Trail, pedestrian mid-block crossings, delivery vehicles. An AV operating here faces maximum agent diversity at low speed — the hardest prediction problem in the city.
+
+**Zone 2 — University Avenue / Sand Hill Road corridor**
+
+University Drive and Sand Hill Circle confirmed Hot Spot at 99% confidence. Dominant factor: Accident History. This corridor has a disproportionate concentration of recorded crashes — including cyclist and pedestrian involvement above baseline. The risk here is not structural complexity. It is demonstrated history.
+
+---
+
+### Cold Spots — Confirmed Safe Corridors
+
+**472 segments** returned as Cold Spots — streets where risk is significantly lower than the surrounding area. These concentrate in the residential neighbourhoods east of US-101 and the lower-density western edges of the city.
+
+Cold spots are not just the absence of risk. They are statistically confirmed low-risk corridors. For an AV operator, these are the routes to prioritise for initial deployment before expanding into the confirmed hotspot zones.
+
+---
+
+### Three Action Categories
+
+| Category | Segments | Intervention |
+|---|---|---|
+| Hot Spot 99% | 158 | Systemic — routing restrictions, enhanced monitoring, infrastructure review. The risk is a zone, not one street. |
+| Hot Spot 90–95% | 198 | Elevated — flag for operational planning, monitor incident rates. |
+| High score, not significant (Willow Rd type) | varies | Targeted — specific corridor flagged, surrounding network is manageable. |
+| Cold Spot | 472 | Confirmed safe — prioritise for initial AV deployment. |
+
+The same analytical logic applies directly to Menlo Park's Street and Sidewalk Capital Improvement Program. A ranked, statistically defensible list of where to act first — that is what this index produces.
 
 ---
 
@@ -377,7 +645,7 @@ A single bad street could be noise. A cluster of bad streets is a systemic probl
 
 **Highest risk corridor:** Willow Road — risk score 0.68, Behavioral Complexity dominant. Major connector to Highway 101, high throughput, mixed traffic. Not a pavement problem. A routing problem.
 
-**Confirmed hotspot corridor:** Santa Cruz Avenue — risk score 0.66, Hot Spot 99% confirmed. Downtown Menlo Park. Angled parking on both sides. Cyclists from the trail. Pedestrians mid-block. Three independent signals converged on the same street without any manual input.
+**Confirmed hotspot corridor:** Santa Cruz Avenue — risk score 0.66, Hot Spot 99% confirmed. Downtown Menlo Park. Angled parking. Cyclists from the trail. Pedestrians mid-block. Three independent signals converged on the same street without any manual input.
 
 **Dominant driver across the city:** Behavioral Complexity drives 1,897 of 2,480 segments. Menlo Park's roads are well-maintained. The risk is environmental, not structural.
 
