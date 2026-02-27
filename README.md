@@ -16,19 +16,7 @@ Three independent data sources. One composite score per segment. A statistically
 <img width="1914" height="1068" alt="AV_Risk_Map png" src="https://github.com/user-attachments/assets/5e04d26a-df04-46f0-8d6c-9d58945d87d5" />
 <!-- Replace this comment block with: ![AV Road Risk Index — Menlo Park CA](outputs/maps/av_risk_index_preview.png) -->
 
-> **To view the full interactive map:** download `outputs/maps/av_risk_index_map.html` and open in Chrome or Edge. Click any segment to see the Street View photo, risk score breakdown, and hotspot classification.
-
 ---
-<br>
-<br>
-<br>
-<br>
-<br>
-<br>
-<br>
-<br>
-<br>
-<br>
 
 ## Pipeline
 
